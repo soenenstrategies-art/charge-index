@@ -158,6 +158,15 @@ Still Jen's to decide: whether she wants to override a client's peak hours by ha
 
 **Josh's own account is in production:** real signup, admin role, a 7-day "Fall 2026" session, and a test `basic_peak_plan` purchase with no amount or Stripe id. It's for reviewing the app as Jen and as a paying client — remove it before launch.
 
+**Unlocking a Peak Plan by hand (2026-10-11).** Checkout still doesn't exist, so a coach opens the paid plan herself — for a beta tester, or someone who paid by invoice. Migration `20261011120000_manual_peak_plan_unlock.sql`; the control is the "Peak Plan access" card on `/coach/clients/[id]`, actions `unlockPeakPlan` / `relockPeakPlan`.
+
+- **`purchases` gains `granted_by` and `note`.** Both stay null on anything Stripe writes, which is the only way to tell a hand-made unlock from a payment that cleared. The insert policy forces `stripe_payment_intent_id is null`, so a coach can't forge a payment reference, and `granted_by = auth.uid()`, so the row names whoever actually clicked.
+- **Deleting is limited to hand-made rows** (`granted_by is not null and stripe_payment_intent_id is null`). A Stripe row stays put even for a coach — deleting the record of money someone paid is how a chargeback becomes unanswerable. Phase 2 refunds set `status = 'refunded'` instead.
+- **The table's grants were tightened in the same migration.** Supabase had given `anon` and `authenticated` every privilege on `purchases`, so RLS was the only gate — the same shape as the September escalation on `profiles`. That was harmless while no write policy existed; adding one made the policy the single thing between a client and a free Peak Plan. Now `anon` holds nothing and `authenticated` holds select/insert/delete only. **No update**, so even a wrong policy couldn't flip a pending row to completed. `service_role` is untouched, and is what Stripe's webhook will use.
+- **Unlocking also reopens tracking.** `can_start_session()` counts completed `basic_peak_plan` purchases, so the client gets another Charge Index too. Inherited from the paid flow and left alone deliberately.
+- **The client isn't told.** There's no email provider, so their results screen simply shows the plan next time they look. Jen tells them.
+- `database.types.ts` was hand-edited to add the two columns, because the migration wasn't applied from the session that wrote it — **regenerate it (`npx supabase gen types`) after applying.**
+
 **Making someone a coach.** Signup always creates a client — `handle_new_user` never reads a role from signup metadata, and clients can't change their own role (see Security). Jen should sign up at `/signup` with her own email and password (don't create her account for her), then promote her through the Management API's SQL endpoint with `SUPABASE_ACCESS_TOKEN`:
 
 ```sql

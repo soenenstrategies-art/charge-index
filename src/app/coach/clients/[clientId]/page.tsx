@@ -8,14 +8,14 @@ import { formatHour } from "@/lib/slots";
 import { requireCoach } from "@/lib/viewer";
 import { MIN_HOURS_FOR_RESULT, formatRanges } from "@/lib/weekly-map";
 
-import { deleteNote, grantSession, reviewFlag, revokeSession } from "./actions";
+import { deleteNote, grantSession, relockPeakPlan, reviewFlag, revokeSession, unlockPeakPlan } from "./actions";
 
 /** One client: every session with its headline numbers, Jen's notes, and exports. */
 export default async function CoachClientPage({ params }: PageProps<"/coach/clients/[clientId]">) {
   const { clientId } = await params;
   const { supabase, user } = await requireCoach(`/coach/clients/${clientId}`);
 
-  const [{ data: client }, bundles, { data: notes }, { data: grants }] = await Promise.all([
+  const [{ data: client }, bundles, { data: notes }, { data: grants }, { data: unlocks }] = await Promise.all([
     supabase.from("profiles").select("id, full_name, email, created_at, role").eq("id", clientId).maybeSingle(),
     loadSessionBundles(supabase, clientId),
     supabase
@@ -28,6 +28,14 @@ export default async function CoachClientPage({ params }: PageProps<"/coach/clie
       .select("id, created_at, granted_by, granter:profiles!session_grants_granted_by_fkey(full_name)")
       .eq("client_id", clientId)
       .order("created_at", { ascending: false }),
+    // Peak Plan access. Hand-made unlocks carry granted_by; a Stripe payment
+    // won't, which is how the card below tells them apart.
+    supabase
+      .from("purchases")
+      .select("id, session_id, status, note, purchased_at, granted_by, granter:profiles!purchases_granted_by_fkey(full_name)")
+      .eq("client_id", clientId)
+      .eq("product", "basic_peak_plan")
+      .eq("status", "completed"),
   ]);
 
   // Clients always; coaches and admins only if they've tracked a session.
@@ -46,6 +54,9 @@ export default async function CoachClientPage({ params }: PageProps<"/coach/clie
   const allowance = 1 + grantCount;
   const unusedGrants = Math.max(0, allowance - bundles.length);
   const sessionLabel = new Map(bundles.map((b) => [b.session.id, b.session.label || "Untitled session"]));
+  // A purchase with a null session_id unlocks nothing (both plan gates match on
+  // session_id), so only the ones tied to a session count here.
+  const unlockBySession = new Map((unlocks ?? []).filter((u) => u.session_id).map((u) => [u.session_id as string, u]));
   const when = (iso: string) => new Date(iso).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
 
   return (
@@ -248,6 +259,93 @@ export default async function CoachClientPage({ params }: PageProps<"/coach/clie
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
+
+      <Card className="mb-5">
+        <h2 className="mb-1 font-serif text-[22px] font-semibold text-navy">Peak Plan access</h2>
+        <p className="mb-4 text-[12px] text-muted">
+          Checkout isn&rsquo;t built yet, so you open the paid plan by hand &mdash; for a beta tester, or someone who
+          paid you another way. Unlocking also gives them another Charge Index. They aren&rsquo;t emailed; their results
+          screen just shows the plan next time they look.
+        </p>
+
+        {bundles.length === 0 ? (
+          <p className="text-[13.5px] text-body">No sessions yet, so there&rsquo;s nothing to unlock.</p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {bundles.map((b) => {
+              const unlock = unlockBySession.get(b.session.id);
+              const thin = b.entries.length < MIN_HOURS_FOR_RESULT;
+              return (
+                <li key={b.session.id} className="rounded-2xl border-[1.5px] border-line px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1 wrap-anywhere">
+                      <div className="text-[13.5px] font-extrabold text-navy">
+                        {b.session.label || "Untitled session"}
+                      </div>
+                      <div className="text-[11px] text-muted">
+                        {b.session.start_date} ·{" "}
+                        {unlock ? (
+                          <span className="font-bold text-level-100">Peak Plan unlocked</span>
+                        ) : (
+                          <span className="font-bold text-muted">Locked</span>
+                        )}
+                        {thin ? (
+                          <>
+                            {" · "}
+                            <span className="font-bold text-level-25">
+                              only {b.entries.length}/{MIN_HOURS_FOR_RESULT} hrs — the plan will come out empty
+                            </span>
+                          </>
+                        ) : null}
+                      </div>
+                      {unlock ? (
+                        <div className="mt-[5px] text-[11.5px] text-body">
+                          By {unlock.granter?.full_name?.trim() || "a coach"} on {when(unlock.purchased_at)}
+                          {unlock.note ? <> · &ldquo;{unlock.note}&rdquo;</> : null}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {unlock ? (
+                      <form action={relockPeakPlan.bind(null, clientId, unlock.id)}>
+                        <button
+                          type="submit"
+                          className="inline-flex min-h-9 items-center rounded-xl border-[1.5px] border-line px-3 text-[12px] font-extrabold text-muted transition hover:border-level-10 hover:text-level-10"
+                        >
+                          Lock again
+                        </button>
+                      </form>
+                    ) : (
+                      <form
+                        action={unlockPeakPlan.bind(null, clientId, b.session.id)}
+                        className="flex flex-wrap items-center gap-2"
+                      >
+                        <label htmlFor={`unlock-note-${b.session.id}`} className="sr-only">
+                          Why you&rsquo;re unlocking this Peak Plan
+                        </label>
+                        <input
+                          id={`unlock-note-${b.session.id}`}
+                          name="note"
+                          type="text"
+                          maxLength={200}
+                          placeholder="Beta tester, paid by e-transfer…"
+                          className="min-h-9 w-[220px] rounded-xl border-[1.5px] border-line bg-white px-3 text-[12.5px] text-ink outline-none transition focus:border-gold focus:ring-4 focus:ring-gold/20"
+                        />
+                        <button
+                          type="submit"
+                          className="inline-flex min-h-9 items-center rounded-xl bg-navy px-4 text-[12px] font-extrabold text-white transition hover:-translate-y-0.5"
+                        >
+                          Unlock Peak Plan
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </Card>
 

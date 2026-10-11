@@ -73,3 +73,59 @@ export async function reviewFlag(clientId: string, sessionId: string, clear: boo
   revalidatePath(`/coach/clients/${clientId}`);
   revalidatePath("/coach");
 }
+
+const MAX_UNLOCK_NOTE = 200;
+
+/**
+ * Unlock a session's Peak Plan by hand — Jen, 2026-10-11.
+ *
+ * Checkout doesn't exist yet, so this is how the paid half reaches someone who
+ * settled by invoice, or a beta tester seeing it for free. The row carries no
+ * Stripe reference and records who unlocked it and why, so a hand-made unlock
+ * can always be told from a payment that actually cleared.
+ *
+ * Worth knowing: a completed basic_peak_plan purchase also buys the client
+ * another Charge Index (can_start_session), so unlocking reopens tracking for
+ * them too. That's inherited from the paid flow and left deliberately alone.
+ */
+export async function unlockPeakPlan(clientId: string, sessionId: string, formData: FormData) {
+  const { supabase, user } = await requireCoach(`/coach/clients/${clientId}`);
+
+  // The session must belong to this client, or the unlock lands on someone
+  // else's plan. RLS wouldn't catch this: a coach may write either row.
+  const { data: owned } = await supabase
+    .from("tracking_sessions")
+    .select("id")
+    .eq("id", sessionId)
+    .eq("client_id", clientId)
+    .maybeSingle();
+  if (!owned) return;
+
+  const note = String(formData.get("note") ?? "")
+    .trim()
+    .slice(0, MAX_UNLOCK_NOTE);
+
+  await supabase.from("purchases").insert({
+    client_id: clientId,
+    session_id: sessionId,
+    product: "basic_peak_plan",
+    status: "completed",
+    granted_by: user.id,
+    note: note || null,
+  });
+
+  revalidatePath(`/coach/clients/${clientId}`);
+}
+
+/**
+ * Take an unlock back — a mis-click, or a beta that's over.
+ *
+ * RLS only allows this for a row made by hand: a Stripe payment stays put even
+ * for a coach, because deleting the record of money someone paid is how a
+ * dispute becomes unanswerable. Refunds set status instead.
+ */
+export async function relockPeakPlan(clientId: string, purchaseId: string) {
+  const { supabase } = await requireCoach(`/coach/clients/${clientId}`);
+  await supabase.from("purchases").delete().eq("id", purchaseId).eq("client_id", clientId);
+  revalidatePath(`/coach/clients/${clientId}`);
+}

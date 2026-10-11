@@ -250,6 +250,70 @@ try {
   expect(denied(await bob.db.from("tracking_sessions").insert({ client_id: bob.id, label: "rls-check", wake_time: "06:00", sleep_time: "22:00", day_count: 5 })), "but only one per purchase");
   expect(!(await coach.db.from("tracking_sessions").insert({ client_id: coach.id, label: "rls-check", wake_time: "06:00", sleep_time: "22:00", day_count: 5 })).error && !(await coach.db.from("tracking_sessions").insert({ client_id: coach.id, label: "rls-check", wake_time: "06:00", sleep_time: "22:00", day_count: 5 })).error, "coaches aren't limited — Jen tracks her own energy");
 
+  console.log("\nUnlocking a Peak Plan by hand (2026-10-11)");
+  // Checkout doesn't exist yet, so a coach opens the paid plan herself. The
+  // whole point of the policy is that only a coach can, so most of these are
+  // the refusals rather than the happy path.
+  // Through the service role, so it doesn't disturb the session-allowance
+  // arithmetic the block above just finished checking.
+  const bobUnlockSession = (
+    await admin
+      .from("tracking_sessions")
+      .insert({ client_id: bob.id, label: "rls-check unlock", wake_time: "06:00", sleep_time: "22:00", day_count: 5 })
+      .select("id")
+      .single()
+  ).data.id;
+
+  const unlocked = await coach.db
+    .from("purchases")
+    .insert({ client_id: bob.id, session_id: bobUnlockSession, product: "basic_peak_plan", status: "completed", granted_by: coach.id, note: "rls-check beta" })
+    .select("id")
+    .single();
+  expect(!unlocked.error, "a coach can unlock a Peak Plan by hand");
+
+  expect(
+    denied(await bob.db.from("purchases").insert({ client_id: bob.id, session_id: bobUnlockSession, product: "basic_peak_plan", status: "completed", granted_by: bob.id })),
+    "a client cannot unlock their own Peak Plan",
+  );
+  expect(
+    denied(await bob.db.from("purchases").insert({ client_id: bob.id, session_id: bobUnlockSession, product: "basic_peak_plan", status: "completed", granted_by: coach.id })),
+    "nor by stamping a coach's name on it",
+  );
+  expect(
+    denied(await coach.db.from("purchases").insert({ client_id: bob.id, session_id: bobUnlockSession, product: "basic_peak_plan", status: "completed", granted_by: bob.id })),
+    "a coach cannot credit the unlock to someone else",
+  );
+  // A hand-made row must never be able to pose as money that cleared Stripe.
+  expect(
+    denied(await coach.db.from("purchases").insert({ client_id: bob.id, session_id: bobUnlockSession, product: "basic_peak_plan", status: "completed", granted_by: coach.id, stripe_payment_intent_id: "pi_forged" })),
+    "a coach cannot forge a Stripe payment reference",
+  );
+  // Nothing in the app edits a purchase, and the privilege is revoked, so a
+  // client can't promote a pending row of their own to completed either.
+  await admin.from("purchases").insert({ client_id: bob.id, product: "coaching", status: "pending" });
+  await bob.db.from("purchases").update({ status: "completed" }).eq("client_id", bob.id).eq("product", "coaching");
+  expect(
+    (await admin.from("purchases").select("status").eq("client_id", bob.id).eq("product", "coaching").single()).data?.status === "pending",
+    "a client cannot flip a pending purchase to completed",
+  );
+
+  // Taking it back is for a mis-click or the end of a beta...
+  await coach.db.from("purchases").delete().eq("id", unlocked.data.id);
+  expect(
+    (await admin.from("purchases").select("id").eq("id", unlocked.data.id).maybeSingle()).data === null,
+    "a coach can take back an unlock they made by hand",
+  );
+  // ...but never a row that wasn't made by hand. alice's purchase came from the
+  // service role with no granted_by, which is the shape Stripe will write.
+  const alicePurchase = (await admin.from("purchases").select("id").eq("client_id", alice.id).limit(1).single()).data;
+  await coach.db.from("purchases").delete().eq("id", alicePurchase.id);
+  expect(
+    (await admin.from("purchases").select("id").eq("id", alicePurchase.id).maybeSingle()).data !== null,
+    "a coach cannot delete a purchase that wasn't unlocked by hand",
+  );
+  await bob.db.from("purchases").delete().eq("client_id", bob.id);
+  expect((await count(admin, "purchases", "client_id", bob.id)) > 0, "a client cannot delete their own purchases");
+
   console.log("\nReviewing a flag is Jen's alone");
   expect(
     Boolean((await alice.db.rpc("set_session_flag_review", { p_session: aliceSession, p_clear: true })).error),

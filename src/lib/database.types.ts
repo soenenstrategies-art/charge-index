@@ -262,7 +262,9 @@ export type Database = {
         Row: {
           amount_cents: number | null
           client_id: string
+          granted_by: string | null
           id: string
+          note: string | null
           product: Database["public"]["Enums"]["purchase_product"]
           purchased_at: string
           session_id: string | null
@@ -272,7 +274,9 @@ export type Database = {
         Insert: {
           amount_cents?: number | null
           client_id: string
+          granted_by?: string | null
           id?: string
+          note?: string | null
           product: Database["public"]["Enums"]["purchase_product"]
           purchased_at?: string
           session_id?: string | null
@@ -282,7 +286,9 @@ export type Database = {
         Update: {
           amount_cents?: number | null
           client_id?: string
+          granted_by?: string | null
           id?: string
+          note?: string | null
           product?: Database["public"]["Enums"]["purchase_product"]
           purchased_at?: string
           session_id?: string | null
@@ -293,6 +299,13 @@ export type Database = {
           {
             foreignKeyName: "purchases_client_id_fkey"
             columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchases_granted_by_fkey"
+            columns: ["granted_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
