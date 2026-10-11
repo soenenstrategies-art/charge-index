@@ -181,7 +181,14 @@ Claude reads `CLAUDE.md` automatically every time you open this folder, so every
 3. Complete Stripe's business and banking verification to reach **Live Mode**.
 4. **(together)** Add the live keys and webhook signing secret to Vercel, then do one supervised real purchase.
 
-Until this is done, "Unlock my plan" stays locked and no client can buy a Peak Plan. Corporate seats are already independent of Stripe — you open those by hand (step 9), which is how a company can pay you by invoice today.
+**You can already sell one without Stripe.** On a client's page there's a
+**Peak Plan access** card: type a reason ("beta tester", "paid by e-transfer")
+and click Unlock. The client sees their plan next time they open their results
+— they get no email, so tell them. "Lock again" takes it back. It also gives
+them another Charge Index, which is the same thing a real purchase does.
+
+Until Stripe is done, the self-serve "Unlock my plan" button stays disabled and
+no client can buy a Peak Plan by themselves. Corporate seats are already independent of Stripe — you open those by hand (step 9), which is how a company can pay you by invoice today.
 
 ## 7b. Switch on your booking links
 
