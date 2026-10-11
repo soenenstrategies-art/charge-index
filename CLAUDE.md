@@ -167,6 +167,14 @@ Still Jen's to decide: whether she wants to override a client's peak hours by ha
 - **The client isn't told.** There's no email provider, so their results screen simply shows the plan next time they look. Jen tells them.
 - `database.types.ts` was hand-edited to add the two columns, because the migration wasn't applied from the session that wrote it — **regenerate it (`npx supabase gen types`) after applying.**
 
+**Forgotten passwords (2026-10-11).** The app had no password reset at all — no link, no page — until Jen locked herself out and found it. A reset sent from the Supabase dashboard *did* verify (`last_sign_in_at` moved 12 seconds after `recovery_sent_at`) but dropped her on `/login` with no session, because Supabase aims a dashboard-sent link at the project's **Site URL**, and the front door has no idea what to do with an arrival from a reset link. The one-time token is spent either way.
+
+- **`/forgot-password`** (public, in the proxy's list) → `requestPasswordReset()` calls `resetPasswordForEmail` with **`redirectTo` pointing at `/auth/confirm?next=/reset-password`**. That redirect is the entire fix: `/auth/confirm` already knows how to turn a link into a session, and `https://app.soenenstrategies.com/**` is already in Supabase's Redirect URLs, so no dashboard change was needed.
+- **`/reset-password`** is deliberately **not** public. It needs the session the link established, and that session is the proof the person owns the mailbox — so there's no "current password" box. It doubles as change-my-password for anyone already signed in. A stale link means no session means the proxy sends them to `/login`; that is the correct answer, not a bug.
+- **The link only works in the browser that asked for it** (the PKCE code verifier is in a cookie this request sets). On a signup confirmation that's the known annoyance; on a password reset it's a feature, and the "check your inbox" copy says so plainly.
+- **The form answers identically whether or not the address has an account**, so it can't be used to discover who has signed up. Only two failures are surfaced — a bot check that didn't pass, and the free plan's few-emails-an-hour ceiling, which otherwise leaves someone waiting for mail that was never sent.
+- Needs **no email provider**: Supabase's built-in sender already handles these, under the same rate limit as signup confirmations.
+
 **Making someone a coach.** Signup always creates a client — `handle_new_user` never reads a role from signup metadata, and clients can't change their own role (see Security). Jen should sign up at `/signup` with her own email and password (don't create her account for her), then promote her through the Management API's SQL endpoint with `SUPABASE_ACCESS_TOKEN`:
 
 ```sql

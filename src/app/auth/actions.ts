@@ -91,3 +91,71 @@ export async function signOut() {
   revalidatePath("/", "layout");
   redirect("/");
 }
+
+export type ResetState = { error: string } | { sent: string } | null;
+
+/**
+ * Send the "choose a new password" email — Jen, 2026-10-11.
+ *
+ * `redirectTo` is the whole point of this function. Without it Supabase aims
+ * the link at the project's Site URL, which is the app's front door, and the
+ * front door has no idea what to do with someone arriving from a reset link:
+ * they land signed-out on /login having used up their one-time token. That is
+ * exactly what happened when the reset was sent from the Supabase dashboard.
+ * Aimed at /auth/confirm instead, the existing route turns the link into a
+ * session and forwards to the page where a new password gets chosen.
+ *
+ * The link only works in the browser that asked for it. That's the PKCE code
+ * verifier, which lives in a cookie this request sets — and for a password
+ * reset it's a feature, not the limitation it is on a signup confirmation.
+ */
+export async function requestPasswordReset(_prev: ResetState, formData: FormData): Promise<ResetState> {
+  const email = String(formData.get("email") ?? "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "That email does not look right." };
+
+  const supabase = await createClient();
+  const origin = (await headers()).get("origin");
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/auth/confirm?next=${encodeURIComponent("/reset-password")}`,
+    ...captcha(formData),
+  });
+
+  // Supabase answers the same way whether or not the address has an account,
+  // so that nobody can use this form to discover who has signed up. Only the
+  // two failures a person can actually act on are shown: a bot check that
+  // didn't go through, and the free plan's handful-of-emails-an-hour ceiling,
+  // which otherwise leaves someone waiting for mail that was never sent.
+  if (error && /captcha|rate limit|too many/i.test(error.message)) {
+    return { error: authMessage(error.message) };
+  }
+  return { sent: email };
+}
+
+/**
+ * Choose a new password.
+ *
+ * Reachable only with the session the reset link established — that session is
+ * the proof the person owns the mailbox, so there's no "current password" box
+ * to fill in. The proxy keeps /reset-password behind a login for the same
+ * reason: arriving without a session means the link expired or was reused.
+ */
+export async function updatePassword(_prev: AuthState, formData: FormData): Promise<AuthState> {
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+
+  if (password.length < 8) return { error: "Choose a password of at least 8 characters." };
+  if (password !== confirm) return { error: "Those two passwords don't match." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "That link has expired. Ask for a new one and try again." };
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: authMessage(error.message) };
+
+  revalidatePath("/", "layout");
+  redirect("/");
+}
