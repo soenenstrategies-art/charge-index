@@ -10,6 +10,48 @@ for) are **not** here — those live in `HANDOFF.md` section 12.
 
 ---
 
+## 0. Set up an email provider — **the beta blocker**
+
+Promoted to the top on 2026-10-11, after it stopped work twice in one evening.
+
+**Supabase's built-in sender allows about two emails an hour, across the whole
+project** — not per person. Every signup confirmation and every password reset
+comes out of the same two.
+
+That evening it was hit in under fifteen minutes by entirely ordinary use: one
+test signup at 20:49, one password reset at 21:02, and the third attempt was
+refused. Trying a different address made no difference, which is how the
+per-project limit was confirmed rather than assumed.
+
+**Why this ends a beta before it starts.** Invite five people. Three sign up the
+same evening — the third one's confirmation email is never sent. What they see
+is a signup that silently doesn't arrive. They don't email to complain; they
+assume it's broken and never come back.
+
+**One setup fixes three things:**
+
+1. **This limit** — thousands a month instead of two an hour.
+2. **The same-browser confirmation problem.** Supabase refuses email-template
+   changes while on its default sender, which is the only reason a new client
+   must open their confirmation link in the browser they signed up in. Off the
+   default sender, the template can be changed to the `token_hash` form and the
+   link works anywhere.
+3. **Reminders** — built, deployed and switched off since September for exactly
+   this reason.
+
+**Steps:** a Resend account under Jen's identity (free tier is far beyond what
+this app would use) → verify a subdomain such as `mail.soenenstrategies.com`,
+which means adding Resend's DNS records in **Wix's panel**, the same screen as
+the `app` CNAME → create an API key → Supabase → Project Settings →
+Authentication → SMTP Settings: host `smtp.resend.com`, port `465`, username
+the literal word `resend`, password the API key, sender on the verified
+subdomain. Then raise the per-hour limit under Authentication → Rate Limits,
+and change the confirmation template.
+
+**The API key never travels through a chat.** Resend → Supabase, nowhere else.
+
+---
+
 ## 1. Turn on leaked-password protection — **blocked: needs a paid Supabase plan**
 
 **Where:** Supabase → Authentication → Providers → Email, in the password
