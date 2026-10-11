@@ -49,6 +49,11 @@ export function LoginForm({ next, notice }: { next?: string; notice?: string }) 
           required
           className={inputClass}
         />
+        <p className="mt-[6px] text-right text-[12px]">
+          <Link href="/forgot-password" className="font-bold text-muted underline hover:text-navy">
+            Forgot your password?
+          </Link>
+        </p>
       </div>
 
       <Turnstile />

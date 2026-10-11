@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./login-form";
 
 const NOTICES: Record<string, string> = {
-  confirm: "That confirmation link has expired. Sign in, or request a new one.",
+  confirm: "That link has expired or was already used. Sign in, or ask for a new one.",
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {

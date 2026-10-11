@@ -134,6 +134,24 @@ try {
     expect(r.status === 307 && r.location.includes("/login"), `${path.split("/").slice(0, 2).join("/")}… redirects to login (${r.status})`);
   }
 
+  console.log("\nThe forgotten-password pages (2026-10-11)");
+  // /forgot-password has to be reachable with no session at all — the people
+  // who need it are by definition locked out.
+  r = await get("/forgot-password");
+  expect(r.status === 200, "a signed-out visitor can open /forgot-password");
+  expect(/Forgot your password/i.test(r.body), "the sign-in screen's link target renders its form");
+  // /reset-password must NOT be: the session the emailed link establishes is
+  // the only proof the person owns the mailbox. A stale link means no session,
+  // and no session has to mean no password change.
+  r = await get("/reset-password");
+  expect(
+    r.status === 307 && r.location.includes("/login"),
+    "a signed-out visitor is refused /reset-password and sent to login",
+  );
+  // Someone already signed in may change their password at any time.
+  r = await get("/reset-password", alice);
+  expect(r.status === 200, "a signed-in client can open /reset-password to change their password");
+
   console.log("\nClient without a purchase");
   let r = await get(`/plan/${aliceUnpaid}`, alice);
   expect(r.status === 404, "own session's plan without a purchase is 404");

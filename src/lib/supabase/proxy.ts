@@ -10,7 +10,11 @@ import type { Database } from "@/lib/database.types";
  */
 // /join is public so an invited person meets a "join your team" page that
 // sends them to SIGN UP, rather than the proxy's generic login redirect.
-const PUBLIC_PATHS = ["/", "/login", "/signup", "/auth", "/api/cron", "/join"];
+// /forgot-password is public for the obvious reason — someone locked out has
+// no session to prove anything with. /reset-password deliberately is NOT:
+// it needs the session the emailed link establishes, and that session is
+// what proves the person owns the mailbox.
+const PUBLIC_PATHS = ["/", "/login", "/signup", "/auth", "/api/cron", "/join", "/forgot-password"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(
