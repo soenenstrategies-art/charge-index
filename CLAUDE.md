@@ -158,7 +158,7 @@ Still Jen's to decide: whether she wants to override a client's peak hours by ha
 
 **Josh's own account is in production:** real signup, admin role, a 7-day "Fall 2026" session, and a test `basic_peak_plan` purchase with no amount or Stripe id. It's for reviewing the app as Jen and as a paying client — remove it before launch.
 
-**Unlocking a Peak Plan by hand (2026-10-11).** Checkout still doesn't exist, so a coach opens the paid plan herself — for a beta tester, or someone who paid by invoice. Migration `20261011120000_manual_peak_plan_unlock.sql`; the control is the "Peak Plan access" card on `/coach/clients/[id]`, actions `unlockPeakPlan` / `relockPeakPlan`.
+**Unlocking a Peak Plan by hand (2026-10-11).** Checkout still doesn't exist, so a coach opens the paid plan herself — for a beta tester, or someone who paid by invoice. Migration `20261011201653_manual_peak_plan_unlock.sql`; the control is the "Peak Plan access" card on `/coach/clients/[id]`, actions `unlockPeakPlan` / `relockPeakPlan`.
 
 - **`purchases` gains `granted_by` and `note`.** Both stay null on anything Stripe writes, which is the only way to tell a hand-made unlock from a payment that cleared. The insert policy forces `stripe_payment_intent_id is null`, so a coach can't forge a payment reference, and `granted_by = auth.uid()`, so the row names whoever actually clicked.
 - **Deleting is limited to hand-made rows** (`granted_by is not null and stripe_payment_intent_id is null`). A Stripe row stays put even for a coach — deleting the record of money someone paid is how a chargeback becomes unanswerable. Phase 2 refunds set `status = 'refunded'` instead.
